@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Pace Keeper – Cadence</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --surface: #13161b;
+    --border: #1f242d;
+    --accent: #e8ff47;
+    --accent2: #ff6b35;
+    --on-target: #47ffb2;
+    --off-target: #ff6b35;
+    --text: #f0f2f5;
+    --muted: #5a6270;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem 1rem;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232,255,71,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232,255,71,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    align-items: center;
+  }
+
+  /* Header */
+  .header { text-align: center; }
+  .title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(2.8rem, 10vw, 5rem);
+    letter-spacing: 0.05em;
+    line-height: 0.9;
+    color: var(--accent);
+    text-shadow: 0 0 40px rgba(232,255,71,0.3);
+  }
+  .subtitle {
+    font-size: 0.65rem;
+    letter-spacing: 0.3em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-top: 0.4rem;
+  }
+
+  /* ── Cadence display ── */
+  .cadence-block {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 1rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .cadence-fraction {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.15em;
+    line-height: 1;
+  }
+  .cadence-current {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(3.8rem, 16vw, 6.5rem);
+    transition: color 0.4s;
+    color: var(--muted);
+  }
+  .cadence-current.on-target  { color: var(--on-target);  text-shadow: 0 0 30px rgba(71,255,178,0.4); }
+  .cadence-current.off-target { color: var(--off-target); text-shadow: 0 0 30px rgba(255,107,53,0.35); }
+  .cadence-sep {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(2rem, 8vw, 3.5rem);
+    color: var(--border);
+    padding: 0 0.1em;
+  }
+  .cadence-target {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(3.8rem, 16vw, 6.5rem);
+    color: var(--accent);
+  }
+  .cadence-labels {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .cadence-labels span { flex: 1; text-align: center; }
+  .cadence-labels .lbl-sep { flex: 0 0 2em; }
+
+  /* sensor permission notice */
+  .sensor-notice {
+    font-size: 0.62rem;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-align: center;
+    text-transform: uppercase;
+    min-height: 1em;
+  }
+  .sensor-notice.active { color: var(--on-target); }
+  .sensor-notice.error  { color: var(--off-target); }
+
+  /* ── Feet ── */
+  .feet-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3rem;
+    width: 100%;
+  }
+  .foot-wrap {
+    position: relative;
+    width: 70px;
+    height: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .foot-svg { width: 70px; height: 90px; overflow: visible; }
+  .foot-body {
+    fill: var(--surface);
+    stroke: var(--border);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    transition: fill 0.05s, stroke 0.05s;
+  }
+  .foot-toe {
+    fill: var(--surface);
+    stroke: var(--border);
+    stroke-width: 1;
+    stroke-linejoin: round;
+    transition: fill 0.05s, stroke 0.05s;
+  }
+  .pulse-ring {
+    position: absolute;
+    inset: 0;
+    width: 70px;
+    height: 90px;
+    opacity: 0;
+    transform: scale(0.85);
+    transform-origin: center center;
+    pointer-events: none;
+  }
+  .pulse-ring path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+  .pulse-ring.active { animation: ringPulse 0.22s ease-out forwards; }
+  @keyframes ringPulse {
+    0%   { transform: scale(0.85); opacity: 0.95; }
+    100% { transform: scale(1.55); opacity: 0; }
+  }
+  .foot-wrap.flash .foot-body,
+  .foot-wrap.flash .foot-toe { fill: var(--accent); stroke: var(--accent); }
+  .foot-wrap.flash .foot-svg {
+    filter: drop-shadow(0 0 10px var(--accent)) drop-shadow(0 0 22px rgba(232,255,71,0.45));
+  }
+
+  /* ── Status + sound ── */
+  .status-bar {
+    display: flex;
+    gap: 1.5rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .status-bar span strong { color: var(--text); font-weight: 500; }
+  .sound-label {
+    font-size: 0.63rem;
+    letter-spacing: 0.25em;
+    color: var(--accent2);
+    text-transform: uppercase;
+    min-height: 1em;
+    transition: opacity 0.4s;
+  }
+
+  /* ── Buttons ── */
+  .btn-start {
+    width: 100%;
+    padding: 1.3rem 2rem;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    cursor: pointer;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.1rem;
+    letter-spacing: 0.15em;
+    transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-start:active { transform: scale(0.98); }
+  .btn-start.running {
+    background: var(--accent2);
+    box-shadow: 0 0 40px rgba(255,107,53,0.4);
+  }
+
+  .tempo-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+    width: 100%;
+  }
+  .btn-tempo {
+    padding: 0.9rem 0.5rem;
+    background: var(--surface);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    font-size: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    transition: all 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-tempo.active {
+    background: rgba(232,255,71,0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 20px rgba(232,255,71,0.15);
+  }
+
+  /* ── Minute bar ── */
+  .minute-bar-wrap { width: 100%; display: flex; flex-direction: column; gap: 0.4rem; }
+  .minute-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.62rem;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .minute-bar-track { width: 100%; height: 4px; background: var(--border); overflow: hidden; }
+  .minute-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.5s linear;
+    box-shadow: 0 0 10px var(--accent);
+  }
+
+  /* ── Debug panel ── */
+  .debug-panel {
+    width: 100%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 0.65rem;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.05em;
+  }
+  .debug-toggle {
+    width: 100%;
+    padding: 0.5rem 0.8rem;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .debug-toggle:active { opacity: 0.7; }
+  .debug-body {
+    display: none;
+    padding: 0.6rem 0.8rem;
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3rem 1rem;
+    color: var(--muted);
+  }
+  .debug-body.hidden { display: none; }
+  .debug-row { display: contents; }
+  .debug-key { color: var(--muted); }
+  .debug-val { color: var(--text); text-align: right; font-weight: 500; }
+  .debug-val.hit { color: var(--accent); }
+  .debug-log {
+    grid-column: 1 / -1;
+    margin-top: 0.4rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.4rem;
+    color: var(--muted);
+    max-height: 80px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+  .debug-log span { display: block; }
+  .debug-log .log-step { color: var(--on-target); }
+  .debug-log .log-skip { color: var(--accent2); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="title">PACE<br>KEEPER</div>
+    <div class="subtitle">Cadence Edition</div>
+  </div>
+
+  <!-- Live cadence fraction -->
+  <div class="cadence-block">
+    <div class="cadence-fraction">
+      <span class="cadence-current" id="cadenceCurrent">—</span>
+      <span class="cadence-sep">/</span>
+      <span class="cadence-target" id="cadenceTarget">160</span>
+    </div>
+    <div class="cadence-labels">
+      <span>Your cadence</span>
+      <span class="lbl-sep"></span>
+      <span>Target</span>
+    </div>
+  </div>
+
+  <div class="sensor-notice" id="sensorNotice">Accelerometer: tap Start to enable</div>
+
+  <!-- Feet -->
+  <div class="feet-wrap">
+    <div class="foot-wrap" id="footWrapL">
+      <svg class="pulse-ring" id="pulseRingL" viewBox="26 16 25 44">
+        <path stroke-linejoin="round" d="M 44.5,18.5C 45.8807,18.5 47,20.2909 47,22.5C 47,24.7091 45.8807,26.5 44.5,26.5C 43.1193,26.5 42,24.7091 42,22.5C 42,20.2909 43.1193,18.5 44.5,18.5 Z M 39.25,19.75C 40.0784,19.75 40.75,20.8693 40.75,22.25C 40.75,23.6307 40.0784,24.75 39.25,24.75C 38.4216,24.75 37.75,23.6307 37.75,22.25C 37.75,20.8693 38.4216,19.75 39.25,19.75 Z M 35,21C 35.8284,21 36.5,21.8954 36.5,23C 36.5,24.1046 35.8284,25 35,25C 34.1716,25 33.5,24.1046 33.5,23C 33.5,21.8954 34.1716,21 35,21 Z M 31.5,23.25C 32.3284,23.25 33,24.1454 33,25.25C 33,26.3546 32.3284,27.25 31.5,27.25C 30.6716,27.25 30,26.3546 30,25.25C 30,24.1454 30.6716,23.25 31.5,23.25 Z M 28.75,26.75C 29.3023,26.75 29.75,27.4216 29.75,28.25C 29.75,29.0784 29.3023,29.75 28.75,29.75C 28.1977,29.75 27.75,29.0784 27.75,28.25C 27.75,27.4216 28.1977,26.75 28.75,26.75 Z M 34,27.5C 43,23 49.2428,31.3086 42,40C 37,46 51.1334,55.5428 42,57.5C 35,59 37.1925,49.8978 35,46C 26,30 34,27.5 34,27.5 Z"/>
+      </svg>
+      <svg class="foot-svg" viewBox="26 16 25 44">
+        <path class="foot-body" stroke-linejoin="round" d="M 34,27.5C 43,23 49.2428,31.3086 42,40C 37,46 51.1334,55.5428 42,57.5C 35,59 37.1925,49.8978 35,46C 26,30 34,27.5 34,27.5 Z"/>
+        <path class="foot-toe" stroke-linejoin="round" d="M 44.5,18.5C 45.8807,18.5 47,20.2909 47,22.5C 47,24.7091 45.8807,26.5 44.5,26.5C 43.1193,26.5 42,24.7091 42,22.5C 42,20.2909 43.1193,18.5 44.5,18.5 Z"/>
+        <path class="foot-toe" stroke-linejoin="round" d="M 39.25,19.75C 40.0784,19.75 40.75,20.8693 40.75,22.25C 40.75,23.6307 40.0784,24.75 39.25,24.75C 38.4216,24.75 37.75,23.6307 37.75,22.25C 37.75,20.8693 38.4216,19.75 39.25,19.75 Z"/>
+        <path class="foot-toe" stroke-linejoin="round" d="M 35,21C 35.8284,21 36.5,21.8954 36.5,23C 36.5,24.1046 35.8284,25 35,25C 34.1716,25 33.5,24.1046 33.5,23C 33.5,21.8954 34.1716,21 35,21 Z"/>
+        <path class="foot-toe" stroke-linejoin="round" d="M 31.5,23.25C 32.3284,23.25 33,24.1454 33,25.25C 33,26.3546 32.3284,27.25 31.5,27.25C 30.6716,27.25 30,26.3546 30,25.25C 30,24.1454 30.6716,23.25 31.5,23.25 Z"/>
+        <path class="foot-toe" stroke-linejoin="round" d="M 28.75,26.75C 29.3023,26.75 29.75,27.4216 29.75,28.25C 29.75,29.0784 29.3023,29.75 28.75,29.75C 28.1977,29.75 27.75,29.0784 27.75,28.25C 27.75,27.4216 28.1977,26.75 28.75,26.75 Z"/>
+      </svg>
+    </div>
+    <div class="foot-wrap" id="footWrapR">
+      <svg class="pulse-ring" id="pulseRingR" viewBox="26 16 25 44">
+        <g transform="translate(77,0) scale(-1,1)">
+          <path stroke-linejoin="round" d="M 44.5,18.5C 45.8807,18.5 47,20.2909 47,22.5C 47,24.7091 45.8807,26.5 44.5,26.5C 43.1193,26.5 42,24.7091 42,22.5C 42,20.2909 43.1193,18.5 44.5,18.5 Z M 39.25,19.75C 40.0784,19.75 40.75,20.8693 40.75,22.25C 40.75,23.6307 40.0784,24.75 39.25,24.75C 38.4216,24.75 37.75,23.6307 37.75,22.25C 37.75,20.8693 38.4216,19.75 39.25,19.75 Z M 35,21C 35.8284,21 36.5,21.8954 36.5,23C 36.5,24.1046 35.8284,25 35,25C 34.1716,25 33.5,24.1046 33.5,23C 33.5,21.8954 34.1716,21 35,21 Z M 31.5,23.25C 32.3284,23.25 33,24.1454 33,25.25C 33,26.3546 32.3284,27.25 31.5,27.25C 30.6716,27.25 30,26.3546 30,25.25C 30,24.1454 30.6716,23.25 31.5,23.25 Z M 28.75,26.75C 29.3023,26.75 29.75,27.4216 29.75,28.25C 29.75,29.0784 29.3023,29.75 28.75,29.75C 28.1977,29.75 27.75,29.0784 27.75,28.25C 27.75,27.4216 28.1977,26.75 28.75,26.75 Z M 34,27.5C 43,23 49.2428,31.3086 42,40C 37,46 51.1334,55.5428 42,57.5C 35,59 37.1925,49.8978 35,46C 26,30 34,27.5 34,27.5 Z"/>
+        </g>
+      </svg>
+      <svg class="foot-svg" viewBox="26 16 25 44">
+        <g transform="translate(77,0) scale(-1,1)">
+          <path class="foot-body" stroke-linejoin="round" d="M 34,27.5C 43,23 49.2428,31.3086 42,40C 37,46 51.1334,55.5428 42,57.5C 35,59 37.1925,49.8978 35,46C 26,30 34,27.5 34,27.5 Z"/>
+          <path class="foot-toe" stroke-linejoin="round" d="M 44.5,18.5C 45.8807,18.5 47,20.2909 47,22.5C 47,24.7091 45.8807,26.5 44.5,26.5C 43.1193,26.5 42,24.7091 42,22.5C 42,20.2909 43.1193,18.5 44.5,18.5 Z"/>
+          <path class="foot-toe" stroke-linejoin="round" d="M 39.25,19.75C 40.0784,19.75 40.75,20.8693 40.75,22.25C 40.75,23.6307 40.0784,24.75 39.25,24.75C 38.4216,24.75 37.75,23.6307 37.75,22.25C 37.75,20.8693 38.4216,19.75 39.25,19.75 Z"/>
+          <path class="foot-toe" stroke-linejoin="round" d="M 35,21C 35.8284,21 36.5,21.8954 36.5,23C 36.5,24.1046 35.8284,25 35,25C 34.1716,25 33.5,24.1046 33.5,23C 33.5,21.8954 34.1716,21 35,21 Z"/>
+          <path class="foot-toe" stroke-linejoin="round" d="M 31.5,23.25C 32.3284,23.25 33,24.1454 33,25.25C 33,26.3546 32.3284,27.25 31.5,27.25C 30.6716,27.25 30,26.3546 30,25.25C 30,24.1454 30.6716,23.25 31.5,23.25 Z"/>
+          <path class="foot-toe" stroke-linejoin="round" d="M 28.75,26.75C 29.3023,26.75 29.75,27.4216 29.75,28.25C 29.75,29.0784 29.3023,29.75 28.75,29.75C 28.1977,29.75 27.75,29.0784 27.75,28.25C 27.75,27.4216 28.1977,26.75 28.75,26.75 Z"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span>Time: <strong id="timeDisplay">0:00</strong></span>
+    <span>Min: <strong id="minDisplay">—</strong></span>
+    <span>Sound: <strong id="soundNum">—</strong></span>
+  </div>
+
+  <div class="sound-label" id="soundLabel">— not running —</div>
+
+  <div class="minute-bar-wrap">
+    <div class="minute-bar-label">
+      <span>Minute progress</span>
+      <span id="secLeft">60s</span>
+    </div>
+    <div class="minute-bar-track">
+      <div class="minute-bar-fill" id="minuteBar"></div>
+    </div>
+  </div>
+
+  <button class="btn-start" id="btnStart" onclick="toggleMetronome()">START</button>
+
+  <div class="tempo-grid">
+    <button class="btn-tempo active" onclick="setTempo(160, this)">160</button>
+    <button class="btn-tempo" onclick="setTempo(170, this)">170</button>
+    <button class="btn-tempo" onclick="setTempo(180, this)">180</button>
+    <button class="btn-tempo" onclick="setTempo(190, this)">190</button>
+  </div>
+
+  <!-- Debug panel -->
+  <div class="debug-panel">
+    <button class="debug-toggle" onclick="toggleDebug()">
+      <span>⚙ Debug</span><span id="debugArrow">▼</span>
+    </button>
+    <div class="debug-body hidden" id="debugBody">
+      <span class="debug-key">Accel X</span><span class="debug-val" id="dbX">—</span>
+      <span class="debug-key">Accel Y</span><span class="debug-val" id="dbY">—</span>
+      <span class="debug-key">Accel Z</span><span class="debug-val" id="dbZ">—</span>
+      <span class="debug-key">Magnitude</span><span class="debug-val" id="dbMag">—</span>
+      <span class="debug-key">Jerk (delta)</span><span class="debug-val" id="dbDelta">—</span>
+      <span class="debug-key">Threshold</span><span class="debug-val" id="dbThresh">—</span>
+      <span class="debug-key">Steps (window)</span><span class="debug-val" id="dbSteps">—</span>
+      <span class="debug-key">Last interval</span><span class="debug-val" id="dbInterval">—</span>
+      <div class="debug-log" id="debugLog"></div>
+    </div>
+  </div>
+
+</div>
+<script>
+  // ─── Constants ────────────────────────────────────────────────────────────
+  const CADENCE_TOLERANCE = 5;   // ±5 spm = on target
+  const STEP_THRESHOLD    = 1.8; // m/s² peak needed to count as a step
+  const STEP_MIN_GAP_MS   = 200; // ignore impacts closer than this (250ms = 240spm max)
+  const CADENCE_WINDOW_S  = 6;   // rolling average over this many seconds
+
+  // ─── State ────────────────────────────────────────────────────────────────
+  let audioCtx        = null;
+  let bpm             = 160;
+  let running         = false;
+  let intervalId      = null;
+  let totalSeconds    = 0;
+  let currentMinute   = 0;
+  let beatCount       = 0;
+  let schedule        = [];
+
+  // Accelerometer / cadence
+  let accelListener   = null;
+  let stepTimestamps  = [];   // rolling list of step impact times
+  let liveCadence     = null; // computed spm, null = not enough data yet
+  let lastStepTime    = 0;
+  let prevMag         = 0;
+  let prevDelta       = 0;    // for peak detection
+
+  // ─── Sounds ───────────────────────────────────────────────────────────────
+  const sounds = [
+    {
+      name: 'Click',
+      play: (ctx, p) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'square';
+        o.frequency.setValueAtTime(1200*p, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(600*p, ctx.currentTime+0.04);
+        g.gain.setValueAtTime(0.3, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.06);
+        o.start(); o.stop(ctx.currentTime+0.06);
+      }
+    },
+    {
+      name: 'Wood block',
+      play: (ctx, p) => {
+        const buf = ctx.createBuffer(1, ctx.sampleRate*0.08, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/(ctx.sampleRate*0.015));
+        const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+        f.type='bandpass'; f.frequency.value=800*p; f.Q.value=8;
+        src.buffer=buf; src.connect(f); f.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.6,ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.08);
+        src.start(); src.stop(ctx.currentTime+0.08);
+      }
+    },
+    {
+      name: 'Beep',
+      play: (ctx, p) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type='sine'; o.frequency.setValueAtTime(880*p,ctx.currentTime);
+        g.gain.setValueAtTime(0.4,ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.07);
+        o.start(); o.stop(ctx.currentTime+0.07);
+      }
+    },
+    {
+      name: 'Blip',
+      play: (ctx, p) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type='triangle';
+        o.frequency.setValueAtTime(440*p,ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(880*p,ctx.currentTime+0.04);
+        g.gain.setValueAtTime(0.4,ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.08);
+        o.start(); o.stop(ctx.currentTime+0.08);
+      }
+    },
+    {
+      name: 'Snap',
+      play: (ctx, p) => {
+        const buf = ctx.createBuffer(1, ctx.sampleRate*0.05, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,3);
+        const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+        f.type='peaking'; f.frequency.value=2000*p; f.gain.value=10;
+        src.buffer=buf; src.connect(f); f.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.55,ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.05);
+        src.start(); src.stop(ctx.currentTime+0.05);
+      }
+    }
+  ];
+
+  const pitches     = [1.0, 1.15, 0.9, 1.5, 0.7];
+  const pitchNames  = ['normal', 'high', 'low', 'higher', 'lower'];
+
+  function buildSchedule(minutes) {
+    const s = []; let last = null;
+    for (let m=0; m<minutes; m++) {
+      let si, pi, combo, tries=0;
+      do {
+        si = Math.floor(Math.random()*sounds.length);
+        pi = Math.floor(Math.random()*pitches.length);
+        combo = `${si}-${pi}`; tries++;
+      } while (combo===last && tries<20);
+      s.push({si,pi}); last=combo;
+    }
+    return s;
+  }
+
+  // ─── Accelerometer ────────────────────────────────────────────────────────
+  function startAccelerometer() {
+    if (!window.DeviceMotionEvent) {
+      setNotice('Accelerometer not available on this device', 'error');
+      return;
+    }
+
+    // iOS 13+ needs permission
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission()
+        .then(state => {
+          if (state === 'granted') {
+            attachAccelerometer();
+          } else {
+            setNotice('Motion permission denied — cadence unavailable', 'error');
+          }
+        })
+        .catch(() => setNotice('Could not request motion permission', 'error'));
+    } else {
+      attachAccelerometer();
+    }
+  }
+
+  // ─── Debug ────────────────────────────────────────────────────────────────
+  let debugOpen = false;
+  let lastInterval = 0;
+
+  function toggleDebug() {
+    debugOpen = !debugOpen;
+    document.getElementById('debugBody').classList.toggle('hidden', !debugOpen);
+    document.getElementById('debugArrow').textContent = debugOpen ? '▲' : '▼';
+  }
+
+  function dbLog(msg, cls='') {
+    if (!debugOpen) return;
+    const log = document.getElementById('debugLog');
+    const el = document.createElement('span');
+    el.textContent = msg;
+    if (cls) el.className = cls;
+    log.appendChild(el);
+    // keep last 12 lines
+    while (log.children.length > 12) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function dbUpdate(x, y, z, mag, jerk) {
+    if (!debugOpen) return;
+    document.getElementById('dbX').textContent      = x.toFixed(2);
+    document.getElementById('dbY').textContent      = y.toFixed(2);
+    document.getElementById('dbZ').textContent      = z.toFixed(2);
+    document.getElementById('dbMag').textContent    = mag.toFixed(2);
+    document.getElementById('dbDelta').textContent  = jerk.toFixed(2);
+    document.getElementById('dbThresh').textContent = STEP_THRESHOLD.toFixed(2);
+    document.getElementById('dbSteps').textContent  = stepTimestamps.length;
+    document.getElementById('dbInterval').textContent = lastInterval ? lastInterval + 'ms' : '—';
+  }
+
+  function attachAccelerometer() {
+    setNotice('Accelerometer active — calibrating…', 'active');
+    accelListener = (e) => handleMotion(e);
+    window.addEventListener('devicemotion', accelListener);
+  }
+
+  function stopAccelerometer() {
+    if (accelListener) {
+      window.removeEventListener('devicemotion', accelListener);
+      accelListener = null;
+    }
+    stepTimestamps = [];
+    liveCadence    = null;
+    prevMag        = 0;
+    prevDelta      = 0;
+    lastInterval   = 0;
+    motionEventCount = 0;
+    setNotice('Accelerometer: tap Start to enable');
+    updateCadenceDisplay();
+  }
+
+  let motionEventCount = 0;
+
+  function handleMotion(e) {
+    motionEventCount++;
+
+    // On first few events, log exactly what the browser is giving us
+    if (motionEventCount <= 3) {
+      const ai  = e.accelerationIncludingGravity;
+      const a   = e.acceleration;
+      dbLog(`evt#${motionEventCount}: aIG=${ai ? `${ai.x?.toFixed(1)},${ai.y?.toFixed(1)},${ai.z?.toFixed(1)}` : 'null'}  a=${a ? `${a.x?.toFixed(1)},${a.y?.toFixed(1)},${a.z?.toFixed(1)}` : 'null'}  int=${e.interval}`);
+    }
+
+    // Pick the best available source:
+    // 1. e.acceleration with non-null, non-zero values (gravity removed — ideal)
+    // 2. e.accelerationIncludingGravity (gravity present — still works for jerk/peaks)
+    const a   = e.acceleration;
+    const aIG = e.accelerationIncludingGravity;
+
+    const aOK  = a  && (a.x  !== null && a.x  !== undefined) && (Math.abs(a.x) + Math.abs(a.y) + Math.abs(a.z) > 0.001);
+    const aIGOK = aIG && (aIG.x !== null && aIG.x !== undefined);
+
+    if (!aOK && !aIGOK) {
+      if (motionEventCount <= 5) dbLog('no usable data in event', 'log-skip');
+      return;
+    }
+
+    const src = aOK ? a : aIG;
+    const x = src.x || 0;
+    const y = src.y || 0;
+    const z = src.z || 0;
+    const mag = Math.sqrt(x*x + y*y + z*z);
+
+    // Jerk = change in magnitude per sample — spikes on footstrike
+    const jerk = mag - prevMag;
+
+    dbUpdate(x, y, z, mag, jerk);
+
+    // Peak detector: was rising, now falling, and peak exceeded threshold
+    if (prevDelta > 0 && jerk <= 0 && prevMag > STEP_THRESHOLD) {
+      const now = Date.now();
+      const gap = now - lastStepTime;
+      if (gap > STEP_MIN_GAP_MS) {
+        lastInterval = gap;
+        lastStepTime = now;
+        recordStep(now);
+        dbLog(`✓ step  mag=${prevMag.toFixed(1)}  gap=${gap}ms  src=${aOK?'a':'aIG'}`, 'log-step');
+      } else {
+        dbLog(`✗ skip  gap=${gap}ms`, 'log-skip');
+      }
+    }
+
+    prevDelta = jerk;
+    prevMag   = mag;
+  }
+
+  function recordStep(timestamp) {
+    stepTimestamps.push(timestamp);
+
+    // Prune steps older than our window
+    const cutoff = timestamp - (CADENCE_WINDOW_S * 1000);
+    stepTimestamps = stepTimestamps.filter(t => t >= cutoff);
+
+    // Need at least 4 steps to calculate cadence reliably
+    if (stepTimestamps.length < 4) {
+      liveCadence = null;
+      updateCadenceDisplay();
+      return;
+    }
+
+    // Average interval between consecutive steps in the window
+    let totalInterval = 0;
+    for (let i = 1; i < stepTimestamps.length; i++) {
+      totalInterval += stepTimestamps[i] - stepTimestamps[i-1];
+    }
+    const avgIntervalMs = totalInterval / (stepTimestamps.length - 1);
+    liveCadence = Math.round(60000 / avgIntervalMs);
+
+    updateCadenceDisplay();
+  }
+
+  function updateCadenceDisplay() {
+    const el = document.getElementById('cadenceCurrent');
+    if (liveCadence === null) {
+      el.textContent = '—';
+      el.className = 'cadence-current';
+      return;
+    }
+    el.textContent = liveCadence;
+    const diff = Math.abs(liveCadence - bpm);
+    el.className = 'cadence-current ' + (diff <= CADENCE_TOLERANCE ? 'on-target' : 'off-target');
+  }
+
+  function setNotice(msg, type='') {
+    const el = document.getElementById('sensorNotice');
+    el.textContent = msg;
+    el.className = 'sensor-notice ' + type;
+  }
+
+  // ─── Metronome ────────────────────────────────────────────────────────────
+  function getIntervalMs() { return 60000 / bpm; }
+
+  function tick() {
+    const isLeft  = beatCount % 2 === 0;
+    const wrapId  = isLeft ? 'footWrapL' : 'footWrapR';
+    const ringId  = isLeft ? 'pulseRingL' : 'pulseRingR';
+    const wrap    = document.getElementById(wrapId);
+    const ring    = document.getElementById(ringId);
+    wrap.classList.add('flash');
+    ring.classList.remove('active');
+    void ring.offsetWidth;
+    ring.classList.add('active');
+    setTimeout(() => wrap.classList.remove('flash'), 80);
+    beatCount++;
+
+    if (audioCtx) {
+      const {si, pi} = schedule[currentMinute] || schedule[0];
+      sounds[si].play(audioCtx, pitches[pi]);
+    }
+
+    totalSeconds += 60 / bpm;
+    const newMinute = Math.floor(totalSeconds / 60);
+    if (newMinute !== currentMinute) {
+      currentMinute = newMinute;
+      if (currentMinute < schedule.length) updateSoundLabel();
+    }
+
+    updateTimerDisplay();
+  }
+
+  function updateSoundLabel() {
+    const {si, pi} = schedule[currentMinute] || schedule[0];
+    const label = document.getElementById('soundLabel');
+    label.style.opacity = '0';
+    setTimeout(() => {
+      label.textContent = `♩ ${sounds[si].name} · ${pitchNames[pi]} pitch`;
+      label.style.opacity = '1';
+    }, 300);
+    document.getElementById('soundNum').textContent = sounds[si].name;
+  }
+
+  function updateTimerDisplay() {
+    const totalSec = Math.floor(totalSeconds);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    document.getElementById('timeDisplay').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+    document.getElementById('minDisplay').textContent  = m + 1;
+    const secInto = totalSeconds % 60;
+    document.getElementById('minuteBar').style.width  = ((secInto/60)*100) + '%';
+    document.getElementById('secLeft').textContent    = Math.ceil(60 - secInto) + 's';
+  }
+
+  function toggleMetronome() {
+    running ? stopMetronome() : startMetronome();
+  }
+
+  function startMetronome() {
+    audioCtx      = new (window.AudioContext || window.webkitAudioContext)();
+    running       = true;
+    totalSeconds  = 0;
+    currentMinute = 0;
+    beatCount     = 0;
+    schedule      = buildSchedule(60);
+
+    document.getElementById('btnStart').textContent = 'STOP';
+    document.getElementById('btnStart').classList.add('running');
+    updateSoundLabel();
+    startAccelerometer();
+    tick();
+    intervalId = setInterval(tick, getIntervalMs());
+  }
+
+  function stopMetronome() {
+    running = false;
+    clearInterval(intervalId);
+    intervalId = null;
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    stopAccelerometer();
+
+    document.getElementById('btnStart').textContent = 'START';
+    document.getElementById('btnStart').classList.remove('running');
+    document.getElementById('footWrapL').classList.remove('flash');
+    document.getElementById('footWrapR').classList.remove('flash');
+    document.getElementById('soundLabel').textContent = '— not running —';
+    document.getElementById('minuteBar').style.width  = '0%';
+  }
+
+  function setTempo(newBpm, btn) {
+    bpm = newBpm;
+    document.getElementById('cadenceTarget').textContent = bpm;
+    document.querySelectorAll('.btn-tempo').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    updateCadenceDisplay(); // recolour immediately if running
+    if (running) {
+      clearInterval(intervalId);
+      intervalId = setInterval(tick, getIntervalMs());
+    }
+  }
+</script>
+</body>
+</html>
