@@ -134,6 +134,23 @@
   .sensor-notice.active { color: var(--on-target); }
   .sensor-notice.error  { color: var(--off-target); }
 
+  .btn-permission {
+    width: 100%;
+    padding: 0.8rem;
+    background: var(--surface);
+    border: 1px solid var(--accent2);
+    color: var(--accent2);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-permission:active { opacity: 0.7; }
+  .btn-permission.hidden { display: none; }
+
   /* ── Feet ── */
   .feet-wrap {
     display: flex;
@@ -272,7 +289,7 @@
     box-shadow: 0 0 10px var(--accent);
   }
 
-  /* ── Debug panel ── */
+  /* ── Cadence log panel ── */
   .debug-panel {
     width: 100%;
     border: 1px solid var(--border);
@@ -299,32 +316,47 @@
   }
   .debug-toggle:active { opacity: 0.7; }
   .debug-body {
-    display: none;
-    padding: 0.6rem 0.8rem;
     border-top: 1px solid var(--border);
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.3rem 1rem;
-    color: var(--muted);
+    padding: 0.5rem 0.8rem 0.7rem;
   }
   .debug-body.hidden { display: none; }
-  .debug-row { display: contents; }
-  .debug-key { color: var(--muted); }
-  .debug-val { color: var(--text); text-align: right; font-weight: 500; }
-  .debug-val.hit { color: var(--accent); }
-  .debug-log {
-    grid-column: 1 / -1;
-    margin-top: 0.4rem;
-    border-top: 1px solid var(--border);
-    padding-top: 0.4rem;
+  .log-header {
+    display: grid;
+    grid-template-columns: 2rem 1fr 1fr 1fr;
+    gap: 0.3rem;
     color: var(--muted);
-    max-height: 80px;
-    overflow-y: auto;
-    line-height: 1.6;
+    font-size: 0.58rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.3rem;
   }
-  .debug-log span { display: block; }
-  .debug-log .log-step { color: var(--on-target); }
-  .debug-log .log-skip { color: var(--accent2); }
+  .cadence-log-rows {
+    max-height: 160px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .log-empty {
+    color: var(--muted);
+    font-size: 0.62rem;
+    padding: 0.3rem 0;
+  }
+  .log-row {
+    display: grid;
+    grid-template-columns: 2rem 1fr 1fr 1fr;
+    gap: 0.3rem;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.65rem;
+  }
+  .log-row .col-min  { color: var(--muted); }
+  .log-row .col-cadence { color: var(--text); font-weight: 500; }
+  .log-row .col-target  { color: var(--accent); }
+  .log-row .col-diff.good { color: var(--on-target); }
+  .log-row .col-diff.bad  { color: var(--off-target); }
 </style>
 </head>
 <body>
@@ -350,6 +382,9 @@
   </div>
 
   <div class="sensor-notice" id="sensorNotice">Accelerometer: tap Start to enable</div>
+  <button class="btn-permission hidden" id="btnPermission" onclick="requestMotionPermission()">
+    ⚡ Enable Motion Sensor
+  </button>
 
   <!-- Feet -->
   <div class="feet-wrap">
@@ -412,21 +447,21 @@
     <button class="btn-tempo" onclick="setTempo(190, this)">190</button>
   </div>
 
-  <!-- Debug panel -->
+  <!-- Cadence history log -->
   <div class="debug-panel">
     <button class="debug-toggle" onclick="toggleDebug()">
-      <span>⚙ Debug</span><span id="debugArrow">▼</span>
+      <span>📋 Cadence Log</span><span id="debugArrow">▼</span>
     </button>
     <div class="debug-body hidden" id="debugBody">
-      <span class="debug-key">Accel X</span><span class="debug-val" id="dbX">—</span>
-      <span class="debug-key">Accel Y</span><span class="debug-val" id="dbY">—</span>
-      <span class="debug-key">Accel Z</span><span class="debug-val" id="dbZ">—</span>
-      <span class="debug-key">Magnitude</span><span class="debug-val" id="dbMag">—</span>
-      <span class="debug-key">Jerk (delta)</span><span class="debug-val" id="dbDelta">—</span>
-      <span class="debug-key">Threshold</span><span class="debug-val" id="dbThresh">—</span>
-      <span class="debug-key">Steps (window)</span><span class="debug-val" id="dbSteps">—</span>
-      <span class="debug-key">Last interval</span><span class="debug-val" id="dbInterval">—</span>
-      <div class="debug-log" id="debugLog"></div>
+      <div class="log-header">
+        <span>Min</span>
+        <span>Avg Cadence</span>
+        <span>Target</span>
+        <span>Diff</span>
+      </div>
+      <div class="cadence-log-rows" id="cadenceLogRows">
+        <div class="log-empty">No data yet — start running</div>
+      </div>
     </div>
   </div>
 
@@ -543,31 +578,51 @@
   }
 
   // ─── Accelerometer ────────────────────────────────────────────────────────
+  function requestMotionPermission() {
+    // Called by the manual permission button
+    attachAccelerometer();
+    document.getElementById('btnPermission').classList.add('hidden');
+  }
+
   function startAccelerometer() {
     if (!window.DeviceMotionEvent) {
       setNotice('Accelerometer not available on this device', 'error');
       return;
     }
 
-    // iOS 13+ needs permission
+    // iOS 13+ explicit permission request
     if (typeof DeviceMotionEvent.requestPermission === 'function') {
       DeviceMotionEvent.requestPermission()
         .then(state => {
           if (state === 'granted') {
             attachAccelerometer();
           } else {
-            setNotice('Motion permission denied — cadence unavailable', 'error');
+            setNotice('Motion permission denied', 'error');
           }
         })
         .catch(() => setNotice('Could not request motion permission', 'error'));
-    } else {
-      attachAccelerometer();
+      return;
     }
+
+    // Android Chrome — attach and do a trial read to check for undefined values
+    attachAccelerometer();
+
+    // After 500ms check if we're getting real data
+    setTimeout(() => {
+      if (motionEventCount > 0 && prevMag === 0) {
+        // Events firing but all values undefined — show manual permission button
+        setNotice('Motion sensor needs permission', 'error');
+        window.removeEventListener('devicemotion', accelListener);
+        accelListener = null;
+        document.getElementById('btnPermission').classList.remove('hidden');
+      }
+    }, 500);
   }
 
-  // ─── Debug ────────────────────────────────────────────────────────────────
-  let debugOpen = false;
+  // ─── Cadence log ─────────────────────────────────────────────────────────
+  let debugOpen    = false;
   let lastInterval = 0;
+  let cadenceHistory = []; // { min, avgCadence, target }
 
   function toggleDebug() {
     debugOpen = !debugOpen;
@@ -575,29 +630,50 @@
     document.getElementById('debugArrow').textContent = debugOpen ? '▲' : '▼';
   }
 
-  function dbLog(msg, cls='') {
-    if (!debugOpen) return;
-    const log = document.getElementById('debugLog');
-    const el = document.createElement('span');
-    el.textContent = msg;
-    if (cls) el.className = cls;
-    log.appendChild(el);
-    // keep last 12 lines
-    while (log.children.length > 12) log.removeChild(log.firstChild);
-    log.scrollTop = log.scrollHeight;
+  // Collect cadence samples within the current minute for averaging
+  let minuteCadenceSamples = [];
+
+  function sampleCadenceForLog() {
+    if (liveCadence !== null) {
+      minuteCadenceSamples.push(liveCadence);
+    }
   }
 
-  function dbUpdate(x, y, z, mag, jerk) {
-    if (!debugOpen) return;
-    document.getElementById('dbX').textContent      = x.toFixed(2);
-    document.getElementById('dbY').textContent      = y.toFixed(2);
-    document.getElementById('dbZ').textContent      = z.toFixed(2);
-    document.getElementById('dbMag').textContent    = mag.toFixed(2);
-    document.getElementById('dbDelta').textContent  = jerk.toFixed(2);
-    document.getElementById('dbThresh').textContent = STEP_THRESHOLD.toFixed(2);
-    document.getElementById('dbSteps').textContent  = stepTimestamps.length;
-    document.getElementById('dbInterval').textContent = lastInterval ? lastInterval + 'ms' : '—';
+  function commitMinuteToCadenceLog(minuteNumber) {
+    if (minuteCadenceSamples.length === 0) return;
+    const avg = Math.round(
+      minuteCadenceSamples.reduce((a, b) => a + b, 0) / minuteCadenceSamples.length
+    );
+    const entry = { min: minuteNumber, avgCadence: avg, target: bpm };
+    cadenceHistory.push(entry);
+    minuteCadenceSamples = [];
+    renderCadenceLog();
   }
+
+  function renderCadenceLog() {
+    const rows = document.getElementById('cadenceLogRows');
+    if (cadenceHistory.length === 0) {
+      rows.innerHTML = '<div class="log-empty">No data yet — start running</div>';
+      return;
+    }
+    rows.innerHTML = cadenceHistory.map(e => {
+      const diff   = e.avgCadence - e.target;
+      const sign   = diff > 0 ? '+' : '';
+      const cls    = Math.abs(diff) <= CADENCE_TOLERANCE ? 'good' : 'bad';
+      return `<div class="log-row">
+        <span class="col-min">${e.min}</span>
+        <span class="col-cadence">${e.avgCadence} spm</span>
+        <span class="col-target">${e.target} spm</span>
+        <span class="col-diff ${cls}">${sign}${diff}</span>
+      </div>`;
+    }).join('');
+    // Scroll to latest
+    rows.scrollTop = rows.scrollHeight;
+  }
+
+  // Stub out old debug functions so handleMotion calls don't break
+  function dbLog() {}
+  function dbUpdate() {}
 
   function attachAccelerometer() {
     setNotice('Accelerometer active — calibrating…', 'active');
@@ -616,6 +692,7 @@
     prevDelta      = 0;
     lastInterval   = 0;
     motionEventCount = 0;
+    document.getElementById('btnPermission').classList.add('hidden');
     setNotice('Accelerometer: tap Start to enable');
     updateCadenceDisplay();
   }
@@ -742,9 +819,14 @@
     totalSeconds += 60 / bpm;
     const newMinute = Math.floor(totalSeconds / 60);
     if (newMinute !== currentMinute) {
+      // Commit the completed minute to the cadence log
+      commitMinuteToCadenceLog(currentMinute + 1);
       currentMinute = newMinute;
       if (currentMinute < schedule.length) updateSoundLabel();
     }
+
+    // Sample live cadence every beat for the per-minute average
+    sampleCadenceForLog();
 
     updateTimerDisplay();
   }
@@ -782,6 +864,9 @@
     currentMinute = 0;
     beatCount     = 0;
     schedule      = buildSchedule(60);
+    cadenceHistory      = [];
+    minuteCadenceSamples = [];
+    renderCadenceLog();
 
     document.getElementById('btnStart').textContent = 'STOP';
     document.getElementById('btnStart').classList.add('running');
